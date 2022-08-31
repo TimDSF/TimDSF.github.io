@@ -82,10 +82,7 @@ analytics:
 author:
   name             : "Tim Dong"
   avatar           : "profile.png"
-  bio              : """LSL 13
-  NSFZ 16
-  NFLS 19
-  WUSTL 22"""
+  bio              : "LSL 13<br>NSFZ 16<br>NFLS 19<br>WUSTL 22"
   location         : "Mountain View, California"
   employer         :
   pubmed           :
