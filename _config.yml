@@ -7,7 +7,7 @@
 
 # Site Settings
 locale                   : "en-US"
-title                    : "T. D."
+title                    : "vicTIM"
 title_separator          : "-"
 name                     : &name "Tim Dong"
 description              : &description "Software Engineer Intern @ Google"
@@ -82,7 +82,10 @@ analytics:
 author:
   name             : "Tim Dong"
   avatar           : "profile.png"
-  bio              : "LSL 13\nNSFZ 16\nNFLS 19\nWUSTL 22"
+  bio              : """LSL 13
+  NSFZ 16
+  NFLS 19
+  WUSTL 22"""
   location         : "Mountain View, California"
   employer         :
   pubmed           :
