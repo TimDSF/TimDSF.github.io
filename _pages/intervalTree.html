@@ -1,0 +1,256 @@
+<!DOCTYPE HTML>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>JSXGraph template</title>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <link href="https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraph.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraphcore.js" type="text/javascript" charset="UTF-8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" async></script>
+  </head>
+
+  <body>
+    <h1>Interval Tree</h1> 
+    <h3>    by Tim Dong, 05/03/2023</h3>
+    <label> New Interval: (</label><input value='-1' type="number" id="left" name="left" style="width:50px"><label>,</label><input value='1' type="number" id="right" name="right" style="width:50px"><label>) inside (-10,10)<br>
+    
+    <div">
+      <button id="addBtn">Add</button>
+      <button id="buildBtn">Build</button>
+      <button id="nextBtn" disabled>Next</button>
+      <button id="clearBtn">Clear</button>
+      <button id="randBtn">Random</button>
+    </div>
+    
+    <br>
+    <br>
+
+    <div style="float: flex;">
+      <div id="intervals" class="jxgbox" style="width:500px; height:500px; float: left;"></div>
+      <div id="tree" class="jxgbox" style="width:500px; height:500px; float: left;"></div>
+    </div>
+
+    <script>
+
+      // class for storing a interval
+      class Interval {
+        constructor(l, r) {
+          this.l = l;  // left boundary
+          this.r = r;  // right boundary
+        }
+      }
+
+      // class for storing a tree node for the interval tree
+      class Node {
+        constructor(m, d, l, r) {
+          this.al = [];  // intervals sorted by ascending order of the left end
+          this.dr = [];  // intervals sorted by descending order of the right end
+          this.median = m;  // median of the tree node
+          this.depth = d;  // depth of the tree node
+          this.l = l;  // left range on the visualization of the tree
+          this.r = r;  // right range on the visualization of the tree
+          // note that: (l + r) / 2 will be the x coordinate of this tree node
+        }
+      }
+
+      // reference: https://jsxgraph.uni-bayreuth.de/docs/index.html
+      // reference: https://jsxgraph.uni-bayreuth.de/wiki/index.php?title=Main_Page
+
+      const I1x = -10, I1y = 20, I2x = 10, I2y = -1;  // the boundary points for the interval visualizer
+      const T1x = -5, T1y = 5, T2x = 5, T2y = -5;  // the boundary points for the tree visualizer
+      var Iboard = JXG.JSXGraph.initBoard('intervals', {boundingbox: [I1x, I1y, I2x, I2y]});  // initialize the interval visualizer
+      var Tboard = JXG.JSXGraph.initBoard('tree', {boundingbox: [T1x - 1, T1y + 1, T2x + 1, T2y - 1]});  // initialize the tree visualizer
+      var mLine = null;  // the median line for each node
+
+      const addBtn = document.getElementById('addBtn');      // add button
+      const buildBtn = document.getElementById('buildBtn');  // build button
+      const nextBtn = document.getElementById('nextBtn');    // next button
+      const clearBtn = document.getElementById('clearBtn');  // clear button
+      const randBtn = document.getElementById('randBtn');    // random button
+
+      const lIpt = document.getElementById("left");   // left boundary input
+      const rIpt = document.getElementById("right");  // right boundary input
+      
+      var intervals = [];  // list of all the intervals
+      var nodes = [];      // the interval tree, stored in a 0-indexed array
+                           // the root of the tree will be at index 1
+                           // for a node at index i, the left child will be i * 2, the right child will be i * 2 + 1 
+      var queue = [];      // a queue for all the tree nodes to be initialized, format [[idx, intervals, depth, l, r], ...]
+
+      var n = 0;  // the number of intervals
+
+      // helper function that adds a new interval
+      function addInterval(l, r) {
+        if (l >= r) return;
+        intervals.push(new Interval(l, r))
+        
+        var p = Iboard.create('point', [l, n], {name: l}); p.setAttribute({fixed:true});
+        var q = Iboard.create('point', [r, n], {name: r}); q.setAttribute({fixed:true});
+        var s = Iboard.create('segment', [p, q], {strokeWidth: 2, strokeColor: 'black'}).setAttribute({fixed:true});
+
+        n += 1;
+        if (n > I1y) {
+          Iboard.setBoundingBox([I1x, n + 1, I2x, I2y]);
+        }
+      }
+      // onclick function for the add button: add a new interval
+      function addIntervalClick() {
+        var l = parseInt(lIpt.value); var r = parseInt(rIpt.value);
+        addInterval(l, r);
+      }
+      // onclick function for the build button: put the input for the root node to the queue
+      function buildTree() {
+        addBtn.disabled = true
+        buildBtn.disabled = true
+        nextBtn.disabled = false
+        nodes = [];
+        for (var i = 0; i <= n * 2; ++ i) {
+          nodes.push(null);
+        }
+        queue = [[1, intervals, 0, -5, 5]]
+      }
+      // onclick function for the next button
+      function next() {
+        if (queue.length == 0) return;
+        build(queue.shift());
+      }
+      // helper function that finds the median end point of the interval
+      // note that: current implementation is O(n log n). A better version should be using the median-of-medians algorithm
+      //            that have a deterministic O(n) time complexity. However, for the purpose of the demo, a simpler O(n log n)
+      //            version is also acceptable
+      function findMedian(intervals) {
+        var arr = [];
+        for (var i = 0; i < intervals.length; ++ i) {
+          arr.push(intervals[i].l);
+          arr.push(intervals[i].r);
+        }
+        arr.sort((a, b) => a - b)
+        return arr[Math.floor(arr.length/2)]
+      }
+      // build function: It will find the median among all the given intervals, split into lefts, rights, and mids. Sort the
+      //                 by the left boundary (ascending) and by the right boundary (descending) and stored at each node. Then,
+      //                 'recursively' build the two children by adding the input to the queue
+      // data = [index, intervals, depth, l, r]
+      function build(data) {
+        idx = data[0]; intervals = data[1]; depth = data[2]; l = data[3]; r = data[4]; m = (l + r) / 2
+        
+        // remove the current median line if exists
+        if (mLine != null) {
+          Iboard.removeObject(mLine);
+        }
+        // empty tree node
+        if (intervals.length == 0) {
+          Tboard.create('point', [m, T1y - 0.5 - depth], {size: 10, name: '('+idx+') null', fillColor: 'grey', strokeColor: 'grey'}).setAttribute({fixed:true});
+          if (idx != 1) {
+            Tboard.create('segment', [[m, T1y - 0.5  - depth], [(nodes[Math.floor(idx / 2)].l + nodes[Math.floor(idx / 2)].r) / 2, T1y + 0.5 - depth]]).setAttribute({fixed:true});
+          }
+          return;
+        }
+
+        // none empty tree node
+        var lefts = [], rights = [], median = findMedian(intervals)
+        nodes[idx] = new Node(median, depth, l, r);
+
+        // create the median line
+        mLine = Iboard.create('line', [[median, I1y], [median, I2y]]).setAttribute({fixed:true});
+
+        // categorize the given intervals
+        for (var i = 0; i < intervals.length; ++ i) {
+          if (intervals[i].r < median) {
+            lefts.push(intervals[i]);
+          } else if (median < intervals[i].l) {
+            rights.push(intervals[i]);
+          } else {
+            nodes[idx].al.push(intervals[i]);
+            nodes[idx].dr.push(intervals[i]);
+          }
+        }
+
+        // sort the intervals that contains the median
+        nodes[idx].al.sort((a, b) => a.l - b.l);
+        nodes[idx].dr.sort((a, b) => b.r - a.r);
+
+        // create the tree node on the tree visualizer
+        Tboard.create('point', [m, T1y - 0.5 - depth], {size: 10, name: '('+idx+') median: '+median}).setAttribute({fixed:true});
+        if (idx != 1) {
+          Tboard.create('segment', [[m, T1y - 0.5 - depth], [(nodes[Math.floor(idx / 2)].l + nodes[Math.floor(idx / 2)].r) / 2, T1y + 0.5 - depth]]).setAttribute({fixed:true});
+        }
+        AL = '   AL:'; DR = '   DR:';
+        for (var i = 0; i < nodes[idx].al.length; ++ i) {
+          AL = AL + ' (' + nodes[idx].al[i].l + ',' + nodes[idx].al[i].r + ')'
+        }
+        for (var i = 0; i < nodes[idx].dr.length; ++ i) {
+          DR = DR + ' (' + nodes[idx].dr[i].l + ',' + nodes[idx].dr[i].r + ')'
+        }
+        Tboard.create('text', [m + 0.25, T1y - 0.5 - depth, AL]).setAttribute({fixed:true}).setAttribute({fixed:true});
+        Tboard.create('text', [m - 0.25, T1y - 0.5 - depth, DR], {anchorX:'right'}).setAttribute({fixed:true}).setAttribute({fixed:true});
+
+        // add the 'recursive' call inputs to the queue for the future steps
+        queue.push([idx * 2, lefts, depth + 1, l, m])
+        queue.push([idx * 2 + 1, rights, depth + 1, m, r])
+      }
+      // clear function: clear all the inputs
+      function clear() {
+        Iboard = JXG.JSXGraph.initBoard('intervals', {boundingbox: [I1x, I1y, I2x, I2y]});
+        Tboard = JXG.JSXGraph.initBoard('nodes', {boundingbox: [T1x - 1, T1y + 1, T2x + 1, T2y - 1]});
+        mLine = null
+        
+        addBtn.disabled = false
+        buildBtn.disabled = false
+        nextBtn.disabled = true
+
+        intervals = []
+        nodes = []
+        queue = [] // [[idx, intervals, depth, l, r]]
+        n = 0;
+      }
+      // helper function that returns a random number with a given limit
+      function rand(lim) {
+        return Math.floor(Math.random() * lim);
+      }
+      // random function: clear all the inputs and randomly generates a new set of inputs
+      function random() {
+        clear();
+        console.log(intervals);
+
+        m = rand(15) + 5;
+        console.log(n);
+        for (var i = 0; i < m; ++ i) {
+          var l = rand(18) - 9, r = rand(9 - l) + l;
+          addInterval(l, r)
+        }
+      }
+
+      // event listeners
+      addBtn.addEventListener('click', addIntervalClick);
+      buildBtn.addEventListener('click', buildTree);
+      nextBtn.addEventListener('click', next);
+      clearBtn.addEventListener('click', clear);
+      randBtn.addEventListener('click', random);
+      lIpt.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addBtn.click();
+        }
+      });
+      rIpt.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addBtn.click();
+        }
+      });
+
+      // default input
+      addInterval(-1, 1);
+      addInterval(-1, 1);
+      addInterval(-9, 9);
+      addInterval(-9, -2);
+      addInterval(-8, 6);
+      addInterval(-7, -5);
+      addInterval(-4, -3);
+      addInterval(1, 9);
+      addInterval(2, 4);
+      addInterval(7, 8);
+    </script>
+  </body>
+</html>
